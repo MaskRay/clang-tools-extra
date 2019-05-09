@@ -1,5 +1,6 @@
 #include "Threading.h"
 #include "Trace.h"
+#include "clang/Basic/Stack.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Threading.h"
@@ -84,16 +85,25 @@ void AsyncTaskRunner::runAsync(const llvm::Twine &Name,
     }
   });
 
-  std::thread(
-      [](std::string Name, decltype(Action) Action, decltype(CleanupTask)) {
-        llvm::set_thread_name(Name);
-        Action();
-        // Make sure function stored by Action is destroyed before CleanupTask
-        // is run.
-        Action = nullptr;
-      },
-      Name.str(), std::move(Action), std::move(CleanupTask))
-      .detach();
+  // Manually capture Action and CleanupTask for the lack of C++14 generalized
+  // lambda captures
+  struct Callable {
+    std::string ThreadName;
+    decltype(Action) ThreadFunc;
+    decltype(CleanupTask) Cleanup;
+
+    void operator()() {
+      llvm::set_thread_name(ThreadName);
+      ThreadFunc();
+      // Make sure function stored by ThreadFunc is destroyed before Cleanup is
+      // run.
+      ThreadFunc = nullptr;
+    }
+  };
+
+  llvm::llvm_execute_on_thread_async(
+      Callable{Name.str(), std::move(Action), std::move(CleanupTask)},
+      clang::DesiredStackSize);
 }
 
 Deadline timeoutSeconds(llvm::Optional<double> Seconds) {
