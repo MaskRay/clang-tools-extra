@@ -52,10 +52,9 @@ GlobList::GlobList(StringRef Globs) {
 }
 
 bool GlobList::contains(StringRef S) {
-  bool Contains = false;
-  for (const GlobListItem &Item : Items) {
+  for (const GlobListItem &Item : llvm::reverse(Items))
     if (Item.Regex.match(S))
-      Contains = Item.IsPositive;
-  }
-  return Contains;
+      return Item.IsPositive;
+
+  return false;;
 }
